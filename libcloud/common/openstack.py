@@ -16,215 +16,274 @@
 """
 Common utilities for OpenStack
 """
-import sys
+
+try:
+    from lxml import etree as ET
+except ImportError:
+    from xml.etree import ElementTree as ET
 
 from libcloud.utils.py3 import httplib
-from libcloud.utils.py3 import urlparse
 
 from libcloud.common.base import ConnectionUserAndKey, Response
-from libcloud.compute.types import LibcloudError, InvalidCredsError, MalformedResponseError
+from libcloud.common.types import ProviderError
+from libcloud.compute.types import (LibcloudError, MalformedResponseError)
+from libcloud.compute.types import KeyPairDoesNotExistError
+from libcloud.common.openstack_identity import get_class_for_auth_version
+
+# Imports for backward compatibility reasons
+from libcloud.common.openstack_identity import (OpenStackServiceCatalog,
+                                                OpenStackIdentityTokenScope)
+
 
 try:
     import simplejson as json
 except ImportError:
     import json
 
-AUTH_API_VERSION = 'v1.0'
+AUTH_API_VERSION = '1.1'
+
+# Auth versions which contain token expiration information.
+AUTH_VERSIONS_WITH_EXPIRES = [
+    '1.1',
+    '2.0',
+    '2.0_apikey',
+    '2.0_password',
+    '3.x',
+    '3.x_password'
+]
 
 __all__ = [
-    "OpenStackBaseConnection",
-    "OpenStackAuthConnection",
-    ]
+    'OpenStackBaseConnection',
+    'OpenStackResponse',
+    'OpenStackException',
+    'OpenStackDriverMixin'
+]
 
-
-# @TODO: Refactor for re-use by other openstack drivers
-class OpenStackAuthResponse(Response):
-    def success(self):
-        return True
-
-    def parse_body(self):
-        if not self.body:
-            return None
-
-        if 'content-type' in self.headers:
-            key = 'content-type'
-        elif 'Content-Type' in self.headers:
-            key = 'Content-Type'
-        else:
-            raise LibcloudError('Missing content-type header', driver=OpenStackAuthConnection)
-
-        content_type = self.headers[key]
-        if content_type.find(';') != -1:
-            content_type = content_type.split(';')[0]
-
-        if content_type == 'application/json':
-            try:
-                data = json.loads(self.body)
-            except:
-                raise MalformedResponseError('Failed to parse JSON',
-                                             body=self.body,
-                                             driver=OpenStackAuthConnection)
-        elif content_type == 'text/plain':
-            data = self.body
-        else:
-            data = self.body
-
-        return data
-
-class OpenStackAuthConnection(ConnectionUserAndKey):
-
-    responseCls = OpenStackAuthResponse
-    name = 'OpenStack Auth'
-
-    def __init__(self, parent_conn, auth_url, auth_version, user_id, key):
-        self.parent_conn = parent_conn
-        # enable tests to use the same mock connection classes.
-        self.conn_classes = parent_conn.conn_classes
-
-        super(OpenStackAuthConnection, self).__init__(
-            user_id, key, url=auth_url)
-
-        self.auth_version = auth_version
-        self.auth_url = auth_url
-        self.urls = {}
-        self.driver = self.parent_conn.driver
-
-    def morph_action_hook(self, action):
-        return action
-
-    def add_default_headers(self, headers):
-        headers['Accept'] = 'application/json'
-        headers['Content-Type'] = 'application/json; charset=UTF-8'
-        return headers
-
-    def authenticate(self):
-        if self.auth_version == "1.0":
-            return self.authenticate_1_0()
-        elif self.auth_version == "1.1":
-            return self.authenticate_1_1()
-        elif self.auth_version == "2.0" or self.auth_version == "2.0_apikey":
-            return self.authenticate_2_0_with_apikey()
-        elif self.auth_version == "2.0_password":
-            return self.authenticate_2_0_with_password()
-        else:
-            raise LibcloudError('Unsupported Auth Version requested')
-
-    def authenticate_1_0(self):
-        resp = self.request("/v1.0",
-                    headers={
-                        'X-Auth-User': self.user_id,
-                        'X-Auth-Key': self.key,
-                    },
-                    method='GET')
-
-        if resp.status == httplib.UNAUTHORIZED:
-            # HTTP UNAUTHORIZED (401): auth failed
-            raise InvalidCredsError()
-        elif resp.status != httplib.NO_CONTENT:
-            raise MalformedResponseError('Malformed response',
-                    body='code: %s body:%s headers:%s' % (resp.status, resp.body, resp.headers),
-                    driver=self.driver)
-        else:
-            headers = resp.headers
-            # emulate the auth 1.1 URL list
-            self.urls = {}
-            self.urls['cloudServers'] = [{'publicURL': headers.get('x-server-management-url', None)}]
-            self.urls['cloudFilesCDN'] = [{'publicURL': headers.get('x-cdn-management-url', None)}]
-            self.urls['cloudFiles'] = [{'publicURL': headers.get('x-storage-url', None)}]
-            self.auth_token = headers.get('x-auth-token', None)
-
-            if not self.auth_token:
-                raise MalformedResponseError('Missing X-Auth-Token in response headers')
-
-    def authenticate_1_1(self):
-        reqbody = json.dumps({'credentials': {'username': self.user_id, 'key': self.key}})
-        resp = self.request("/v1.1/auth",
-                    data=reqbody,
-                    headers={},
-                    method='POST')
-
-        if resp.status == httplib.UNAUTHORIZED:
-            # HTTP UNAUTHORIZED (401): auth failed
-            raise InvalidCredsError()
-        elif resp.status != httplib.OK:
-            raise MalformedResponseError('Malformed response',
-                    body='code: %s body:%s' % (resp.status, resp.body),
-                    driver=self.driver)
-        else:
-            try:
-                body = json.loads(resp.body)
-            except Exception:
-                e = sys.exc_info()[1]
-                raise MalformedResponseError('Failed to parse JSON', e)
-            try:
-                self.auth_token = body['auth']['token']['id']
-                self.urls = body['auth']['serviceCatalog']
-            except KeyError:
-                e = sys.exc_info()[1]
-                raise MalformedResponseError('Auth JSON response is missing required elements', e)
-
-    def authenticate_2_0_with_apikey(self):
-        # API Key based authentication uses the RAX-KSKEY extension.
-        # https://github.com/openstack/keystone/tree/master/keystone/content/service
-        reqbody = json.dumps({'auth':{'RAX-KSKEY:apiKeyCredentials':{'username':self.user_id, 'apiKey':self.key}}})
-        return self.authenticate_2_0_with_body(reqbody)
-
-    def authenticate_2_0_with_password(self):
-        # Password based authentication is the only 'core' authentication method in Keystone at this time.
-        # 'keystone' - http://docs.openstack.org/api/openstack-identity-service/2.0/content/Identity-Service-Concepts-e1362.html
-        reqbody = json.dumps({'auth':{'passwordCredentials':{'username':self.user_id, 'password':self.key}}})
-        return self.authenticate_2_0_with_body(reqbody)
-
-    def authenticate_2_0_with_body(self, reqbody):
-        resp = self.request('/v2.0/tokens/',
-                    data=reqbody,
-                    headers={'Content-Type':'application/json'},
-                    method='POST')
-        if resp.status == httplib.UNAUTHORIZED:
-            raise InvalidCredsError()
-        elif resp.status not in [httplib.OK, httplib.NON_AUTHORITATIVE_INFORMATION]:
-            raise MalformedResponseError('Malformed response',
-                    body='code: %s body: %s' % (resp.status, resp.body),
-                    driver=self.driver)
-        else:
-            try:
-                body = json.loads(resp.body)
-            except Exception:
-                e = sys.exc_info()[1]
-                raise MalformedResponseError('Failed to parse JSON', e)
-
-            try:
-                access = body['access']
-                token = access['token']
-                self.auth_token = token['id']
-                self.urls = access['serviceCatalog']
-            except KeyError:
-                e = sys.exc_info()[1]
-                raise MalformedResponseError('Auth JSON response is missing required elements', e)
 
 class OpenStackBaseConnection(ConnectionUserAndKey):
 
+    """
+    Base class for OpenStack connections.
+
+    :param user_id: User name to use when authenticating
+    :type user_id: ``str``
+
+    :param key: Secret to use when authenticating.
+    :type key: ``str``
+
+    :param secure: Use HTTPS?  (True by default.)
+    :type secure: ``bool``
+
+    :param ex_force_base_url: Base URL for connection requests.  If
+                              not specified, this will be determined by
+                              authenticating.
+    :type ex_force_base_url: ``str``
+
+    :param ex_force_auth_url: Base URL for authentication requests.
+    :type ex_force_auth_url: ``str``
+
+    :param ex_force_auth_version: Authentication version to use.  If
+                                  not specified, defaults to AUTH_API_VERSION.
+    :type ex_force_auth_version: ``str``
+
+    :param ex_force_auth_token: Authentication token to use for connection
+                                requests.  If specified, the connection will
+                                not attempt to authenticate, and the value
+                                of ex_force_base_url will be used to
+                                determine the base request URL.  If
+                                ex_force_auth_token is passed in,
+                                ex_force_base_url must also be provided.
+    :type ex_force_auth_token: ``str``
+
+    :param token_scope: Whether to scope a token to a "project", a
+                        "domain" or "unscoped".
+    :type token_scope: ``str``
+
+    :param ex_domain_name: When authenticating, provide this domain name to
+                           the identity service.  A scoped token will be
+                           returned. Some cloud providers require the domain
+                           name to be provided at authentication time. Others
+                           will use a default domain if none is provided.
+    :type ex_domain_name: ``str``
+
+    :param ex_tenant_name: When authenticating, provide this tenant name to the
+                           identity service. A scoped token will be returned.
+                           Some cloud providers require the tenant name to be
+                           provided at authentication time. Others will use a
+                           default tenant if none is provided.
+    :type ex_tenant_name: ``str``
+
+    :param ex_force_service_type: Service type to use when selecting an
+                                  service. If not specified, a provider
+                                  specific default will be used.
+    :type ex_force_service_type: ``str``
+
+    :param ex_force_service_name: Service name to use when selecting an
+                                  service. If not specified, a provider
+                                  specific default will be used.
+    :type ex_force_service_name: ``str``
+
+    :param ex_force_service_region: Region to use when selecting an service.
+                                    If not specified, a provider specific
+                                    default will be used.
+    :type ex_force_service_region: ``str``
+    """
+
     auth_url = None
+    auth_token = None
+    auth_token_expires = None
+    auth_user_info = None
+    service_catalog = None
+    service_type = None
+    service_name = None
+    service_region = None
+    accept_format = None
+    _auth_version = None
 
     def __init__(self, user_id, key, secure=True,
-                 host=None, port=None,
+                 host=None, port=None, timeout=None, proxy_url=None,
                  ex_force_base_url=None,
                  ex_force_auth_url=None,
-                 ex_force_auth_version=None):
-        self.server_url = None
-        self.cdn_management_url = None
-        self.storage_url = None
-        self.lb_url = None
-        self.auth_token = None
-        self._force_base_url = ex_force_base_url
+                 ex_force_auth_version=None,
+                 ex_force_auth_token=None,
+                 ex_token_scope=OpenStackIdentityTokenScope.PROJECT,
+                 ex_domain_name='Default',
+                 ex_tenant_name=None,
+                 ex_force_service_type=None,
+                 ex_force_service_name=None,
+                 ex_force_service_region=None,
+                 retry_delay=None, backoff=None):
+        super(OpenStackBaseConnection, self).__init__(
+            user_id, key, secure=secure, timeout=timeout,
+            retry_delay=retry_delay, backoff=backoff, proxy_url=proxy_url)
+
+        if ex_force_auth_version:
+            self._auth_version = ex_force_auth_version
+
+        self._ex_force_base_url = ex_force_base_url
         self._ex_force_auth_url = ex_force_auth_url
-        self._auth_version = ex_force_auth_version
+        self._ex_force_auth_token = ex_force_auth_token
+        self._ex_token_scope = ex_token_scope
+        self._ex_domain_name = ex_domain_name
+        self._ex_tenant_name = ex_tenant_name
+        self._ex_force_service_type = ex_force_service_type
+        self._ex_force_service_name = ex_force_service_name
+        self._ex_force_service_region = ex_force_service_region
+        self._osa = None
+
+        if ex_force_auth_token and not ex_force_base_url:
+            raise LibcloudError(
+                'Must also provide ex_force_base_url when specifying '
+                'ex_force_auth_token.')
+
+        if ex_force_auth_token:
+            self.auth_token = ex_force_auth_token
 
         if not self._auth_version:
-            self._auth_version = '1.1'
+            self._auth_version = AUTH_API_VERSION
 
-        super(OpenStackBaseConnection, self).__init__(
-            user_id, key, secure=secure)
+        auth_url = self._get_auth_url()
+
+        if not auth_url:
+            raise LibcloudError('OpenStack instance must ' +
+                                'have auth_url set')
+
+    def get_auth_class(self):
+        """
+        Retrieve identity / authentication class instance.
+
+        :rtype: :class:`OpenStackIdentityConnection`
+        """
+        if not self._osa:
+            auth_url = self._get_auth_url()
+
+            cls = get_class_for_auth_version(auth_version=self._auth_version)
+            self._osa = cls(auth_url=auth_url,
+                            user_id=self.user_id,
+                            key=self.key,
+                            tenant_name=self._ex_tenant_name,
+                            domain_name=self._ex_domain_name,
+                            token_scope=self._ex_token_scope,
+                            timeout=self.timeout,
+                            parent_conn=self)
+
+        return self._osa
+
+    def request(self, action, params=None, data='', headers=None,
+                method='GET', raw=False):
+        headers = headers or {}
+        params = params or {}
+
+        # Include default content-type for POST and PUT request (if available)
+        default_content_type = getattr(self, 'default_content_type', None)
+        if method.upper() in ['POST', 'PUT'] and default_content_type:
+            headers = {'Content-Type': default_content_type}
+
+        return super(OpenStackBaseConnection, self).request(action=action,
+                                                            params=params,
+                                                            data=data,
+                                                            method=method,
+                                                            headers=headers,
+                                                            raw=raw)
+
+    def _get_auth_url(self):
+        """
+        Retrieve auth url for this instance using either "ex_force_auth_url"
+        constructor kwarg of "auth_url" class variable.
+        """
+        auth_url = self.auth_url
+
+        if self._ex_force_auth_url is not None:
+            auth_url = self._ex_force_auth_url
+
+        return auth_url
+
+    def get_service_catalog(self):
+        if self.service_catalog is None:
+            self._populate_hosts_and_request_paths()
+
+        return self.service_catalog
+
+    def get_service_name(self):
+        """
+        Gets the service name used to look up the endpoint in the service
+        catalog.
+
+        :return: name of the service in the catalog
+        """
+        if self._ex_force_service_name:
+            return self._ex_force_service_name
+
+        return self.service_name
+
+    def get_endpoint(self):
+        """
+        Selects the endpoint to use based on provider specific values,
+        or overrides passed in by the user when setting up the driver.
+
+        :returns: url of the relevant endpoint for the driver
+        """
+        service_type = self.service_type
+        service_name = self.service_name
+        service_region = self.service_region
+
+        if self._ex_force_service_type:
+            service_type = self._ex_force_service_type
+        if self._ex_force_service_name:
+            service_name = self._ex_force_service_name
+        if self._ex_force_service_region:
+            service_region = self._ex_force_service_region
+
+        endpoint = self.service_catalog.get_endpoint(service_type=service_type,
+                                                     name=service_name,
+                                                     region=service_region)
+
+        url = endpoint.url
+
+        if not url:
+            raise LibcloudError('Could not find specified endpoint')
+
+        return url
 
     def add_default_headers(self, headers):
         headers['X-Auth-Token'] = self.auth_token
@@ -232,95 +291,165 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
         return headers
 
     def morph_action_hook(self, action):
-        if self._force_base_url:
-            _, _, request_path, _, _, _ = urlparse.urlparse(self._force_base_url)
-            return request_path + action
-
-        value = getattr(self, self._url_key, None)
-        if not value:
-            self._populate_hosts_and_request_paths()
-        request_path = getattr(self, '__request_path_%s' % (self._url_key), '')
-        action = request_path + action
-
-        return action
-
-    @property
-    def base_url(self):
-        return self._get_base_url(url_key=self._url_key)
-
-    def _get_base_url(self, url_key):
-        value = getattr(self, url_key, None)
-        if not value:
-            self._populate_hosts_and_request_paths()
-            value = getattr(self, url_key, None)
-        if self._force_base_url != None:
-            value = self._force_base_url
-        return value
-
-    def _get_default_region(self, arr):
-        if len(arr):
-            return arr[0]['publicURL']
-        return None
-
-    def request(self, **kwargs):
         self._populate_hosts_and_request_paths()
-        return super(OpenStackBaseConnection, self).request(**kwargs)
+        return super(OpenStackBaseConnection, self).morph_action_hook(action)
+
+    def _set_up_connection_info(self, url):
+        result = self._tuple_from_url(url)
+        (self.host, self.port, self.secure, self.request_path) = result
 
     def _populate_hosts_and_request_paths(self):
         """
         OpenStack uses a separate host for API calls which is only provided
-        after an initial authentication request. If we haven't made that
-        request yet, do it here. Otherwise, just return the management host.
+        after an initial authentication request.
         """
-        if not self.auth_token:
-            aurl = self.auth_url
+        osa = self.get_auth_class()
 
-            if self._ex_force_auth_url != None:
-                aurl = self._ex_force_auth_url
+        if self._ex_force_auth_token:
+            # If ex_force_auth_token is provided we always hit the api directly
+            # and never try to authenticate.
+            #
+            # Note: When ex_force_auth_token is provided, ex_force_base_url
+            # must be provided as well.
+            self._set_up_connection_info(url=self._ex_force_base_url)
+            return
 
-            if aurl == None:
-                raise LibcloudError('OpenStack instance must have auth_url set')
+        if not osa.is_token_valid():
+            # Token is not available or it has expired. Need to retrieve a
+            # new one.
+            if self._auth_version == '2.0_apikey':
+                kwargs = {'auth_type': 'api_key'}
+            elif self._auth_version == '2.0_password':
+                kwargs = {'auth_type': 'password'}
+            else:
+                kwargs = {}
 
-            osa = OpenStackAuthConnection(self, aurl, self._auth_version, self.user_id, self.key)
-
-            # may throw InvalidCreds, etc
-            osa.authenticate()
+            osa = osa.authenticate(**kwargs)  # may throw InvalidCreds
 
             self.auth_token = osa.auth_token
+            self.auth_token_expires = osa.auth_token_expires
+            self.auth_user_info = osa.auth_user_info
 
-            # TODO: Multi-region support
-            if self._auth_version in ['2.0', '2.0_apikey', '2.0_password']:
-                self.tenant_ids = {}
+            # Pull out and parse the service catalog
+            osc = OpenStackServiceCatalog(service_catalog=osa.urls,
+                                          auth_version=self._auth_version)
+            self.service_catalog = osc
 
-                for service in osa.urls:
-                    service_type = service['type']
-                    if service_type == 'compute':
-                        self.server_url = self._get_default_region(service.get('endpoints', []))
+        url = self._ex_force_base_url or self.get_endpoint()
+        self._set_up_connection_info(url=url)
 
-                    self.tenant_ids[service_type] = service['endpoints'][0]['tenantId']
-            elif self._auth_version in ['1.1', '1.0']:
-                self.server_url = self._get_default_region(osa.urls.get('cloudServers', []))
-                self.cdn_management_url = self._get_default_region(osa.urls.get('cloudFilesCDN', []))
-                self.storage_url = self._get_default_region(osa.urls.get('cloudFiles', []))
-                # TODO: this is even more broken, the service catalog does NOT show load
-                # balanacers :(  You must hard code in the Rackspace Load balancer URLs...
-                self.lb_url = self.server_url.replace("servers", "ord.loadbalancers")
-                self.dns_url = self.server_url.replace("servers", "dns")
+
+class OpenStackException(ProviderError):
+    pass
+
+
+class OpenStackResponse(Response):
+    node_driver = None
+
+    def success(self):
+        i = int(self.status)
+        return i >= 200 and i <= 299
+
+    def has_content_type(self, content_type):
+        content_type_value = self.headers.get('content-type') or ''
+        content_type_value = content_type_value.lower()
+        return content_type_value.find(content_type.lower()) > -1
+
+    def parse_body(self):
+        if self.status == httplib.NO_CONTENT or not self.body:
+            return None
+
+        if self.has_content_type('application/xml'):
+            try:
+                return ET.XML(self.body)
+            except:
+                raise MalformedResponseError(
+                    'Failed to parse XML',
+                    body=self.body,
+                    driver=self.node_driver)
+
+        elif self.has_content_type('application/json'):
+            try:
+                return json.loads(self.body)
+            except:
+                raise MalformedResponseError(
+                    'Failed to parse JSON',
+                    body=self.body,
+                    driver=self.node_driver)
+        else:
+            return self.body
+
+    def parse_error(self):
+        text = None
+        body = self.parse_body()
+
+        if self.has_content_type('application/xml'):
+            text = '; '.join([err.text or '' for err in body.getiterator()
+                              if err.text])
+        elif self.has_content_type('application/json'):
+            values = list(body.values())
+
+            context = self.connection.context
+            driver = self.connection.driver
+            key_pair_name = context.get('key_pair_name', None)
+
+            if len(values) > 0 and values[0]['code'] == 404 and key_pair_name:
+                raise KeyPairDoesNotExistError(name=key_pair_name,
+                                               driver=driver)
+            elif len(values) > 0 and 'message' in values[0]:
+                text = ';'.join([fault_data['message'] for fault_data
+                                 in values])
             else:
-                raise LibcloudError('auth version "%s" not supported' % (self._auth_version))
+                text = body
+        else:
+            # while we hope a response is always one of xml or json, we have
+            # seen html or text in the past, its not clear we can really do
+            # something to make it more readable here, so we will just pass
+            # it along as the whole response body in the text variable.
+            text = body
 
-            for key in ['server_url', 'storage_url', 'cdn_management_url',
-                        'lb_url', 'dns_url']:
-                base_url = None
-                if self._force_base_url != None:
-                    base_url = self._force_base_url
-                else:
-                    base_url = getattr(self, key)
+        return '%s %s %s' % (self.status, self.error, text)
 
-                scheme, server, request_path, param, query, fragment = (
-                    urlparse.urlparse(base_url))
-                # Set host to where we want to make further requests to
-                setattr(self, '__%s' % (key), server+request_path)
-                setattr(self, '__request_path_%s' % (key), request_path)
 
-            (self.host, self.port, self.secure, self.request_path) = self._tuple_from_url(self.base_url)
+class OpenStackDriverMixin(object):
+
+    def __init__(self, *args, **kwargs):
+        self._ex_force_base_url = kwargs.get('ex_force_base_url', None)
+        self._ex_force_auth_url = kwargs.get('ex_force_auth_url', None)
+        self._ex_force_auth_version = kwargs.get('ex_force_auth_version', None)
+        self._ex_force_auth_token = kwargs.get('ex_force_auth_token', None)
+        self._ex_token_scope = kwargs.get('ex_token_scope', None)
+        self._ex_domain_name = kwargs.get('ex_domain_name', None)
+        self._ex_tenant_name = kwargs.get('ex_tenant_name', None)
+        self._ex_force_service_type = kwargs.get('ex_force_service_type', None)
+        self._ex_force_service_name = kwargs.get('ex_force_service_name', None)
+        self._ex_force_service_region = kwargs.get('ex_force_service_region',
+                                                   None)
+
+    def openstack_connection_kwargs(self):
+        """
+
+        :rtype: ``dict``
+        """
+        rv = {}
+        if self._ex_force_base_url:
+            rv['ex_force_base_url'] = self._ex_force_base_url
+        if self._ex_force_auth_token:
+            rv['ex_force_auth_token'] = self._ex_force_auth_token
+        if self._ex_force_auth_url:
+            rv['ex_force_auth_url'] = self._ex_force_auth_url
+        if self._ex_force_auth_version:
+            rv['ex_force_auth_version'] = self._ex_force_auth_version
+        if self._ex_token_scope:
+            rv['ex_token_scope'] = self._ex_token_scope
+        if self._ex_domain_name:
+            rv['ex_domain_name'] = self._ex_domain_name
+        if self._ex_tenant_name:
+            rv['ex_tenant_name'] = self._ex_tenant_name
+        if self._ex_force_service_type:
+            rv['ex_force_service_type'] = self._ex_force_service_type
+        if self._ex_force_service_name:
+            rv['ex_force_service_name'] = self._ex_force_service_name
+        if self._ex_force_service_region:
+            rv['ex_force_service_region'] = self._ex_force_service_region
+        return rv

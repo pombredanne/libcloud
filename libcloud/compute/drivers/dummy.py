@@ -24,7 +24,9 @@ import struct
 from libcloud.common.base import ConnectionKey
 from libcloud.compute.base import NodeImage, NodeSize, Node
 from libcloud.compute.base import NodeDriver, NodeLocation
-from libcloud.compute.types import Provider,NodeState
+from libcloud.compute.base import KeyPair
+from libcloud.compute.types import Provider, NodeState
+
 
 class DummyConnection(ConnectionKey):
     """
@@ -33,6 +35,7 @@ class DummyConnection(ConnectionKey):
 
     def connect(self, host=None, port=None):
         pass
+
 
 class DummyNodeDriver(NodeDriver):
     """
@@ -62,9 +65,16 @@ class DummyNodeDriver(NodeDriver):
     """
 
     name = "Dummy Node Provider"
+    website = 'http://example.com'
     type = Provider.DUMMY
 
     def __init__(self, creds):
+        """
+        :param  creds: Credentials
+        :type   creds: ``str``
+
+        :rtype: ``None``
+        """
         self.creds = creds
         try:
             num = int(creds)
@@ -76,34 +86,40 @@ class DummyNodeDriver(NodeDriver):
             for i in range(num):
                 ip = _int_to_ip(startip + i)
                 self.nl.append(
-                Node(id=i,
-                    name='dummy-%d' % (i),
-                    state=NodeState.RUNNING,
-                    public_ips=[ip],
-                    private_ips=[],
-                    driver=self,
-                    extra={'foo': 'bar'})
+                    Node(id=i,
+                         name='dummy-%d' % (i),
+                         state=NodeState.RUNNING,
+                         public_ips=[ip],
+                         private_ips=[],
+                         driver=self,
+                         extra={'foo': 'bar'})
                 )
         else:
             self.nl = [
                 Node(id=1,
-                    name='dummy-1',
-                    state=NodeState.RUNNING,
-                    public_ips=['127.0.0.1'],
-                    private_ips=[],
-                    driver=self,
-                    extra={'foo': 'bar'}),
+                     name='dummy-1',
+                     state=NodeState.RUNNING,
+                     public_ips=['127.0.0.1'],
+                     private_ips=[],
+                     driver=self,
+                     extra={'foo': 'bar'}),
                 Node(id=2,
-                    name='dummy-2',
-                    state=NodeState.RUNNING,
-                    public_ips=['127.0.0.1'],
-                    private_ips=[],
-                    driver=self,
-                    extra={'foo': 'bar'}),
+                     name='dummy-2',
+                     state=NodeState.RUNNING,
+                     public_ips=['127.0.0.1'],
+                     private_ips=[],
+                     driver=self,
+                     extra={'foo': 'bar'}),
             ]
         self.connection = DummyConnection(self.creds)
 
     def get_uuid(self, unique_field=None):
+        """
+
+        :param  unique_field: Unique field
+        :type   unique_field: ``bool``
+        :rtype: :class:`UUID`
+        """
         return str(uuid.uuid4())
 
     def list_nodes(self):
@@ -130,8 +146,10 @@ class DummyNodeDriver(NodeDriver):
         's1'
         >>> node.image.id
         'i2'
-        >>> sorted([node.name for node in driver.list_nodes()])
+        >>> sorted([n.name for n in driver.list_nodes()])
         ['dummy-1', 'dummy-2', 'dummy-3']
+
+        @inherits: :class:`NodeDriver.list_nodes`
         """
         return self.nl
 
@@ -154,6 +172,8 @@ class DummyNodeDriver(NodeDriver):
         True
 
         Please note, dummy nodes never recover from the reboot.
+
+        @inherits: :class:`NodeDriver.reboot_node`
         """
 
         node.state = NodeState.REBOOTING
@@ -166,15 +186,18 @@ class DummyNodeDriver(NodeDriver):
         >>> from libcloud.compute.drivers.dummy import DummyNodeDriver
         >>> driver = DummyNodeDriver(0)
         >>> from libcloud.compute.types import NodeState
-        >>> node = [node for node in driver.list_nodes() if node.name == 'dummy-1'][0]
+        >>> node = [node for node in driver.list_nodes() if
+        ...         node.name == 'dummy-1'][0]
         >>> node.state == NodeState.RUNNING
         True
         >>> driver.destroy_node(node)
         True
         >>> node.state == NodeState.RUNNING
         False
-        >>> [node for node in driver.list_nodes() if node.name == 'dummy-1']
+        >>> [n for n in driver.list_nodes() if n.name == 'dummy-1']
         []
+
+        @inherits: :class:`NodeDriver.destroy_node`
         """
 
         node.state = NodeState.TERMINATED
@@ -189,6 +212,8 @@ class DummyNodeDriver(NodeDriver):
         >>> driver = DummyNodeDriver(0)
         >>> sorted([image.name for image in driver.list_images()])
         ['Slackware 4', 'Ubuntu 9.04', 'Ubuntu 9.10']
+
+        @inherits: :class:`NodeDriver.list_images`
         """
         return [
             NodeImage(id=1, name="Ubuntu 9.10", driver=self),
@@ -204,6 +229,8 @@ class DummyNodeDriver(NodeDriver):
         >>> driver = DummyNodeDriver(0)
         >>> sorted([size.ram for size in driver.list_sizes()])
         [128, 512, 4096, 8192]
+
+        @inherits: :class:`NodeDriver.list_images`
         """
 
         return [
@@ -230,10 +257,10 @@ class DummyNodeDriver(NodeDriver):
                      driver=self),
             NodeSize(id=4,
                      name="XXL Big",
-                     ram=4096*2,
-                     disk=32*4,
-                     bandwidth=2500*3,
-                     price=32*2,
+                     ram=4096 * 2,
+                     disk=32 * 4,
+                     bandwidth=2500 * 3,
+                     price=32 * 2,
                      driver=self),
         ]
 
@@ -243,8 +270,11 @@ class DummyNodeDriver(NodeDriver):
 
         >>> from libcloud.compute.drivers.dummy import DummyNodeDriver
         >>> driver = DummyNodeDriver(0)
-        >>> sorted([loc.name + " in " + loc.country for loc in driver.list_locations()])
+        >>> sorted([loc.name + " in " + loc.country for loc in
+        ...         driver.list_locations()])
         ['Island Datacenter in FJ', 'London Loft in GB', "Paul's Room in US"]
+
+        @inherits: :class:`NodeDriver.list_locations`
         """
         return [
             NodeLocation(id=1,
@@ -279,6 +309,8 @@ class DummyNodeDriver(NodeDriver):
         True
         >>> sorted([node.name for node in driver.list_nodes()])
         ['dummy-1', 'dummy-2', 'dummy-4']
+
+        @inherits: :class:`NodeDriver.create_node`
         """
         l = len(self.nl) + 1
         n = Node(id=l,
@@ -295,12 +327,23 @@ class DummyNodeDriver(NodeDriver):
         self.nl.append(n)
         return n
 
+    def import_key_pair_from_string(self, name, key_material):
+        key_pair = KeyPair(name=name,
+                           public_key=key_material,
+                           fingerprint='fingerprint',
+                           private_key='private_key',
+                           driver=self)
+        return key_pair
+
+
 def _ip_to_int(ip):
     return socket.htonl(struct.unpack('I', socket.inet_aton(ip))[0])
+
 
 def _int_to_ip(ip):
     return socket.inet_ntoa(struct.pack('I', socket.ntohl(ip)))
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

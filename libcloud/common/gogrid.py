@@ -27,11 +27,13 @@ HOST = 'api.gogrid.com'
 PORTS_BY_SECURITY = {True: 443, False: 80}
 API_VERSION = '1.8'
 
-__all__ = ["GoGridResponse",
-        "GoGridConnection",
-        "GoGridIpAddress",
-        "BaseGoGridDriver",
+__all__ = [
+    "GoGridResponse",
+    "GoGridConnection",
+    "GoGridIpAddress",
+    "BaseGoGridDriver",
 ]
+
 
 class GoGridResponse(JsonResponse):
 
@@ -43,20 +45,23 @@ class GoGridResponse(JsonResponse):
         if self.status == 403:
             raise InvalidCredsError('Invalid credentials', self.driver)
         if self.status == 401:
-            raise InvalidCredsError('API Key has insufficient rights', self.driver)
+            raise InvalidCredsError('API Key has insufficient rights',
+                                    self.driver)
         if not self.body:
             return None
         try:
             return self.parse_body()['status'] == 'success'
         except ValueError:
             raise MalformedResponseError('Malformed reply',
-                    body=self.body, driver=self.driver)
+                                         body=self.body,
+                                         driver=self.driver)
 
     def parse_error(self):
         try:
             return self.parse_body()["list"][0]["message"]
         except (ValueError, KeyError):
             return None
+
 
 class GoGridConnection(ConnectionUserAndKey):
     """
@@ -79,6 +84,12 @@ class GoGridConnection(ConnectionUserAndKey):
         m = hashlib.md5(b(key + secret + str(int(time.time()))))
         return m.hexdigest()
 
+    def request(self, action, params=None, data='', headers=None, method='GET',
+                raw=False):
+        return super(GoGridConnection, self).request(action, params, data,
+                                                     headers, method, raw)
+
+
 class GoGridIpAddress(object):
     """
     IP Address
@@ -90,6 +101,7 @@ class GoGridIpAddress(object):
         self.public = public
         self.state = state
         self.subnet = subnet
+
 
 class BaseGoGridDriver(object):
     """GoGrid has common object model for services they
@@ -103,10 +115,10 @@ class BaseGoGridDriver(object):
 
     def _to_ip(self, element):
         ip = GoGridIpAddress(id=element['id'],
-                ip=element['ip'],
-                public=element['public'],
-                subnet=element['subnet'],
-                state=element["state"]["name"])
+                             ip=element['ip'],
+                             public=element['public'],
+                             subnet=element['subnet'],
+                             state=element["state"]["name"])
         ip.location = self._to_location(element['datacenter'])
         return ip
 
@@ -115,10 +127,11 @@ class BaseGoGridDriver(object):
                 for el in object['list']]
 
     def _to_location(self, element):
+        # pylint: disable=no-member
         location = NodeLocation(id=element['id'],
-                name=element['name'],
-                country="US",
-                driver=self.connection.driver)
+                                name=element['name'],
+                                country="US",
+                                driver=self.connection.driver)
         return location
 
     def _to_locations(self, object):
@@ -129,35 +142,38 @@ class BaseGoGridDriver(object):
         """Return list of IP addresses assigned to
         the account.
 
-        @keyword    public: set to True to list only
+        :keyword    public: set to True to list only
                     public IPs or False to list only
                     private IPs. Set to None or not specify
                     at all not to filter by type
-        @type       public: C{bool}
-        @keyword    assigned: set to True to list only addresses
+        :type       public: ``bool``
+
+        :keyword    assigned: set to True to list only addresses
                     assigned to servers, False to list unassigned
                     addresses and set to None or don't set at all
                     not no filter by state
-        @type       assigned: C{bool}
-        @keyword    location: filter IP addresses by location
-        @type       location: L{NodeLocation}
-        @return:    C{list} of L{GoGridIpAddress}es
+        :type       assigned: ``bool``
+
+        :keyword    location: filter IP addresses by location
+        :type       location: :class:`NodeLocation`
+
+        :rtype: ``list`` of :class:`GoGridIpAddress`
         """
 
         params = {}
 
         if "public" in kwargs and kwargs["public"] is not None:
             params["ip.type"] = {True: "Public",
-                    False: "Private"}[kwargs["public"]]
+                                 False: "Private"}[kwargs["public"]]
         if "assigned" in kwargs and kwargs["assigned"] is not None:
             params["ip.state"] = {True: "Assigned",
-                    False: "Unassigned"}[kwargs["assigned"]]
+                                  False: "Unassigned"}[kwargs["assigned"]]
         if "location" in kwargs and kwargs['location'] is not None:
             params['datacenter'] = kwargs['location'].id
 
-        ips = self._to_ips(
-                self.connection.request('/api/grid/ip/list',
-                    params=params).object)
+        # pylint: disable=no-member
+        response = self.connection.request('/api/grid/ip/list', params=params)
+        ips = self._to_ips(response.object)
         return ips
 
     def _get_first_ip(self, location=None):
@@ -165,5 +181,6 @@ class BaseGoGridDriver(object):
         try:
             return ips[0].ip
         except IndexError:
+            # pylint: disable=no-member
             raise LibcloudError('No public unassigned IPs left',
-                    self.driver)
+                                self.driver)

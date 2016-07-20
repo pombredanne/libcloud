@@ -23,52 +23,104 @@ __all__ = [
     'ZoneAlreadyExistsError',
     'RecordError',
     'RecordDoesNotExistError',
-    'RecordAlreadyExistsError'
+    'RecordAlreadyExistsError',
+
+    'OLD_CONSTANT_TO_NEW_MAPPING'
 ]
 
 
 class Provider(object):
-    DUMMY = 0
-    LINODE = 1
-    ZERIGO = 2
-    RACKSPACE_US = 3
-    RACKSPACE_UK = 4
-    ROUTE_53 = 5
+    """
+    Defines for each of the supported providers
+
+    Non-Dummy drivers are sorted in alphabetical order. Please preserve this
+    ordering when adding new drivers.
+    """
+    DUMMY = 'dummy'
+    AURORADNS = 'auroradns'
+    BUDDYNS = 'buddyns'
+    CLOUDFLARE = 'cloudflare'
+    DIGITAL_OCEAN = 'digitalocean'
+    DNSIMPLE = 'dnsimple'
+    DURABLEDNS = 'durabledns'
+    GANDI = 'gandi'
+    GODADDY = 'godaddy'
+    GOOGLE = 'google'
+    HOSTVIRTUAL = 'hostvirtual'
+    LINODE = 'linode'
+    LIQUIDWEB = 'liquidweb'
+    LUADNS = 'luadns'
+    NFSN = 'nfsn'
+    NSONE = 'nsone'
+    POINTDNS = 'pointdns'
+    POWERDNS = 'powerdns'
+    RACKSPACE = 'rackspace'
+    ROUTE53 = 'route53'
+    SOFTLAYER = 'softlayer'
+    VULTR = 'vultr'
+    WORLDWIDEDNS = 'worldwidedns'
+    ZERIGO = 'zerigo'
+    ZONOMI = 'zonomi'
+    DNSPOD = 'dnspod'
+    # Deprecated
+    RACKSPACE_US = 'rackspace_us'
+    RACKSPACE_UK = 'rackspace_uk'
+
+
+OLD_CONSTANT_TO_NEW_MAPPING = {
+    Provider.RACKSPACE_US: Provider.RACKSPACE,
+    Provider.RACKSPACE_UK: Provider.RACKSPACE,
+}
 
 
 class RecordType(object):
     """
     DNS record type.
     """
-    A = 0
-    AAAA = 1
-    MX = 2
-    NS = 3
-    CNAME = 4
-    DNAME = 5
-    TXT = 6
-    PTR = 7
-    SOA = 8
-    SPF = 9
-    SRV = 10
-    PTR = 11
-    NAPTR = 12
-    REDIRECT = 13
-
-    @classmethod
-    def __repr__(self, value):
-        reverse = dict((v, k) for k, v in list(RecordType.__dict__.items()))
-        return reverse[value]
+    A = 'A'
+    AAAA = 'AAAA'
+    AFSDB = 'A'
+    ALIAS = 'ALIAS'
+    CERT = 'CERT'
+    CNAME = 'CNAME'
+    DNAME = 'DNAME'
+    DNSKEY = 'DNSKEY'
+    DS = 'DS'
+    GEO = 'GEO'
+    HINFO = 'HINFO'
+    KEY = 'KEY'
+    LOC = 'LOC'
+    MX = 'MX'
+    NAPTR = 'NAPTR'
+    NS = 'NS'
+    NSEC = 'NSEC'
+    OPENPGPKEY = 'OPENPGPKEY'
+    PTR = 'PTR'
+    REDIRECT = 'REDIRECT'
+    RP = 'RP'
+    RRSIG = 'RRSIG'
+    SOA = 'SOA'
+    SPF = 'SPF'
+    SRV = 'SRV'
+    SSHFP = 'SSHFP'
+    TLSA = 'TLSA'
+    TXT = 'TXT'
+    URL = 'URL'
+    WKS = 'WKS'
 
 
 class ZoneError(LibcloudError):
     error_type = 'ZoneError'
+    kwargs = ('zone_id', )
 
     def __init__(self, value, driver, zone_id):
         self.zone_id = zone_id
         super(ZoneError, self).__init__(value=value, driver=driver)
 
     def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
         return ('<%s in %s, zone_id=%s, value=%s>' %
                 (self.error_type, repr(self.driver),
                  self.zone_id, self.value))
@@ -90,6 +142,9 @@ class RecordError(LibcloudError):
         super(RecordError, self).__init__(value=value, driver=driver)
 
     def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
         return ('<%s in %s, record_id=%s, value=%s>' %
                 (self.error_type, repr(self.driver),
                  self.record_id, self.value))

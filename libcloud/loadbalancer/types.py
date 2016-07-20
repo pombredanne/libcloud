@@ -14,11 +14,13 @@
 # limitations under the License.
 
 __all__ = [
-        "Provider",
-        "State",
-        "LibcloudLBError",
-        "LibcloudLBImmutableError",
-        ]
+    "Provider",
+    "State",
+    "LibcloudLBError",
+    "LibcloudLBImmutableError",
+
+    "OLD_CONSTANT_TO_NEW_MAPPING"
+]
 
 from libcloud.common.types import LibcloudError
 
@@ -32,19 +34,42 @@ class LibcloudLBImmutableError(LibcloudLBError):
 
 
 class Provider(object):
-    RACKSPACE_US = 0
-    GOGRID = 1
-    NINEFOLD = 2
-    RACKSPACE_UK = 3
-    BRIGHTBOX = 4
+    """
+    Defines for each of the supported providers
+
+    Non-Dummy drivers are sorted in alphabetical order. Please preserve this
+    ordering when adding new drivers.
+
+    :cvar ALIYUN_SLB: Aliyun SLB loadbalancer driver
+    """
+    ALIYUN_SLB = 'aliyun_slb'
+    BRIGHTBOX = 'brightbox'
+    CLOUDSTACK = 'cloudstack'
+    DIMENSIONDATA = 'dimensiondata'
+    ELB = 'elb'
+    GCE = 'gce'
+    GOGRID = 'gogrid'
+    NINEFOLD = 'ninefold'
+    RACKSPACE = 'rackspace'
+    SOFTLAYER = 'softlayer'
+
+    # Deprecated
+    RACKSPACE_US = 'rackspace_us'
+    RACKSPACE_UK = 'rackspace_uk'
+
+
+OLD_CONSTANT_TO_NEW_MAPPING = {
+    Provider.RACKSPACE_US: Provider.RACKSPACE,
+    Provider.RACKSPACE_UK: Provider.RACKSPACE,
+}
 
 
 class State(object):
     """
     Standard states for a loadbalancer
 
-    @cvar RUNNING: loadbalancer is running and ready to use
-    @cvar UNKNOWN: loabalancer state is unknown
+    :cvar RUNNING: loadbalancer is running and ready to use
+    :cvar UNKNOWN: loabalancer state is unknown
     """
 
     RUNNING = 0
@@ -53,9 +78,10 @@ class State(object):
     ERROR = 3
     DELETED = 4
 
+
 class MemberCondition(object):
     """
-    Each member of a load balancer can have an associated condition 
+    Each member of a load balancer can have an associated condition
     which determines its role within the load balancer.
     """
     ENABLED = 0

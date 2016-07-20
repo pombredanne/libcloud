@@ -16,8 +16,11 @@
 Provider related utilities
 """
 
-from libcloud.utils.misc import get_driver as _get_provider_driver
 from libcloud.compute.types import Provider
+from libcloud.common.providers import get_driver as _get_provider_driver
+from libcloud.common.providers import set_driver as _set_provider_driver
+from libcloud.compute.types import OLD_CONSTANT_TO_NEW_MAPPING
+from libcloud.compute.deprecated import DEPRECATED_DRIVERS
 
 __all__ = [
     "Provider",
@@ -25,83 +28,129 @@ __all__ = [
     "get_driver"]
 
 DRIVERS = {
+    Provider.AZURE:
+    ('libcloud.compute.drivers.azure', 'AzureNodeDriver'),
     Provider.DUMMY:
-        ('libcloud.compute.drivers.dummy', 'DummyNodeDriver'),
-    Provider.EC2_US_EAST:
-        ('libcloud.compute.drivers.ec2', 'EC2NodeDriver'),
-    Provider.EC2_EU_WEST:
-        ('libcloud.compute.drivers.ec2', 'EC2EUNodeDriver'),
-    Provider.EC2_US_WEST:
-        ('libcloud.compute.drivers.ec2', 'EC2USWestNodeDriver'),
-    Provider.EC2_US_WEST_OREGON:
-        ('libcloud.compute.drivers.ec2', 'EC2USWestOregonNodeDriver'),
-    Provider.EC2_AP_SOUTHEAST:
-        ('libcloud.compute.drivers.ec2', 'EC2APSENodeDriver'),
-    Provider.EC2_AP_NORTHEAST:
-        ('libcloud.compute.drivers.ec2', 'EC2APNENodeDriver'),
-    Provider.EC2_SA_EAST:
-        ('libcloud.compute.drivers.ec2', 'EC2SAEastNodeDriver'),
+    ('libcloud.compute.drivers.dummy', 'DummyNodeDriver'),
+    Provider.EC2:
+    ('libcloud.compute.drivers.ec2', 'EC2NodeDriver'),
     Provider.ECP:
-        ('libcloud.compute.drivers.ecp', 'ECPNodeDriver'),
-    Provider.ELASTICHOSTS_UK1:
-        ('libcloud.compute.drivers.elastichosts', 'ElasticHostsUK1NodeDriver'),
-    Provider.ELASTICHOSTS_UK2:
-        ('libcloud.compute.drivers.elastichosts', 'ElasticHostsUK2NodeDriver'),
-    Provider.ELASTICHOSTS_US1:
-        ('libcloud.compute.drivers.elastichosts', 'ElasticHostsUS1NodeDriver'),
+    ('libcloud.compute.drivers.ecp', 'ECPNodeDriver'),
+    Provider.ELASTICHOSTS:
+    ('libcloud.compute.drivers.elastichosts', 'ElasticHostsNodeDriver'),
     Provider.SKALICLOUD:
-        ('libcloud.compute.drivers.skalicloud', 'SkaliCloudNodeDriver'),
+    ('libcloud.compute.drivers.skalicloud', 'SkaliCloudNodeDriver'),
     Provider.SERVERLOVE:
-        ('libcloud.compute.drivers.serverlove', 'ServerLoveNodeDriver'),
+    ('libcloud.compute.drivers.serverlove', 'ServerLoveNodeDriver'),
     Provider.CLOUDSIGMA:
-        ('libcloud.compute.drivers.cloudsigma', 'CloudSigmaZrhNodeDriver'),
-    Provider.CLOUDSIGMA_US:
-        ('libcloud.compute.drivers.cloudsigma', 'CloudSigmaLvsNodeDriver'),
+    ('libcloud.compute.drivers.cloudsigma', 'CloudSigmaNodeDriver'),
+    Provider.GCE:
+    ('libcloud.compute.drivers.gce', 'GCENodeDriver'),
     Provider.GOGRID:
-        ('libcloud.compute.drivers.gogrid', 'GoGridNodeDriver'),
+    ('libcloud.compute.drivers.gogrid', 'GoGridNodeDriver'),
     Provider.RACKSPACE:
-        ('libcloud.compute.drivers.rackspace', 'RackspaceNodeDriver'),
-    Provider.RACKSPACE_UK:
-        ('libcloud.compute.drivers.rackspace', 'RackspaceUKNodeDriver'),
-    Provider.SLICEHOST:
-        ('libcloud.compute.drivers.slicehost', 'SlicehostNodeDriver'),
+    ('libcloud.compute.drivers.rackspace', 'RackspaceNodeDriver'),
+    Provider.RACKSPACE_FIRST_GEN:
+    ('libcloud.compute.drivers.rackspace', 'RackspaceFirstGenNodeDriver'),
+    Provider.KILI:
+    ('libcloud.compute.drivers.kili', 'KiliCloudNodeDriver'),
     Provider.VPSNET:
-        ('libcloud.compute.drivers.vpsnet', 'VPSNetNodeDriver'),
+    ('libcloud.compute.drivers.vpsnet', 'VPSNetNodeDriver'),
     Provider.LINODE:
-        ('libcloud.compute.drivers.linode', 'LinodeNodeDriver'),
+    ('libcloud.compute.drivers.linode', 'LinodeNodeDriver'),
     Provider.RIMUHOSTING:
-        ('libcloud.compute.drivers.rimuhosting', 'RimuHostingNodeDriver'),
+    ('libcloud.compute.drivers.rimuhosting', 'RimuHostingNodeDriver'),
     Provider.VOXEL:
-        ('libcloud.compute.drivers.voxel', 'VoxelNodeDriver'),
+    ('libcloud.compute.drivers.voxel', 'VoxelNodeDriver'),
     Provider.SOFTLAYER:
-        ('libcloud.compute.drivers.softlayer', 'SoftLayerNodeDriver'),
+    ('libcloud.compute.drivers.softlayer', 'SoftLayerNodeDriver'),
     Provider.EUCALYPTUS:
-        ('libcloud.compute.drivers.ec2', 'EucNodeDriver'),
-    Provider.IBM:
-        ('libcloud.compute.drivers.ibm_sbc', 'IBMNodeDriver'),
+    ('libcloud.compute.drivers.ec2', 'EucNodeDriver'),
     Provider.OPENNEBULA:
-        ('libcloud.compute.drivers.opennebula', 'OpenNebulaNodeDriver'),
-    Provider.DREAMHOST:
-        ('libcloud.compute.drivers.dreamhost', 'DreamhostNodeDriver'),
+    ('libcloud.compute.drivers.opennebula', 'OpenNebulaNodeDriver'),
     Provider.BRIGHTBOX:
-        ('libcloud.compute.drivers.brightbox', 'BrightboxNodeDriver'),
+    ('libcloud.compute.drivers.brightbox', 'BrightboxNodeDriver'),
     Provider.NIMBUS:
-        ('libcloud.compute.drivers.ec2', 'NimbusNodeDriver'),
+    ('libcloud.compute.drivers.ec2', 'NimbusNodeDriver'),
     Provider.BLUEBOX:
-        ('libcloud.compute.drivers.bluebox', 'BlueboxNodeDriver'),
+    ('libcloud.compute.drivers.bluebox', 'BlueboxNodeDriver'),
     Provider.GANDI:
-        ('libcloud.compute.drivers.gandi', 'GandiNodeDriver'),
-    Provider.OPSOURCE:
-        ('libcloud.compute.drivers.opsource', 'OpsourceNodeDriver'),
+    ('libcloud.compute.drivers.gandi', 'GandiNodeDriver'),
+    Provider.DIMENSIONDATA:
+    ('libcloud.compute.drivers.dimensiondata', 'DimensionDataNodeDriver'),
     Provider.OPENSTACK:
-        ('libcloud.compute.drivers.openstack', 'OpenStackNodeDriver'),
-    Provider.NINEFOLD:
-        ('libcloud.compute.drivers.ninefold', 'NinefoldNodeDriver'),
+    ('libcloud.compute.drivers.openstack', 'OpenStackNodeDriver'),
+    Provider.VCLOUD:
+    ('libcloud.compute.drivers.vcloud', 'VCloudNodeDriver'),
     Provider.TERREMARK:
-        ('libcloud.compute.drivers.vcloud', 'TerremarkDriver'),
+    ('libcloud.compute.drivers.vcloud', 'TerremarkDriver'),
     Provider.CLOUDSTACK:
-        ('libcloud.compute.drivers.cloudstack', 'CloudStackNodeDriver')
+    ('libcloud.compute.drivers.cloudstack', 'CloudStackNodeDriver'),
+    Provider.LIBVIRT:
+    ('libcloud.compute.drivers.libvirt_driver', 'LibvirtNodeDriver'),
+    Provider.JOYENT:
+    ('libcloud.compute.drivers.joyent', 'JoyentNodeDriver'),
+    Provider.VCL:
+    ('libcloud.compute.drivers.vcl', 'VCLNodeDriver'),
+    Provider.KTUCLOUD:
+    ('libcloud.compute.drivers.ktucloud', 'KTUCloudNodeDriver'),
+    Provider.HOSTVIRTUAL:
+    ('libcloud.compute.drivers.hostvirtual', 'HostVirtualNodeDriver'),
+    Provider.ABIQUO:
+    ('libcloud.compute.drivers.abiquo', 'AbiquoNodeDriver'),
+    Provider.DIGITAL_OCEAN:
+    ('libcloud.compute.drivers.digitalocean', 'DigitalOceanNodeDriver'),
+    Provider.NEPHOSCALE:
+    ('libcloud.compute.drivers.nephoscale', 'NephoscaleNodeDriver'),
+    Provider.EXOSCALE:
+    ('libcloud.compute.drivers.exoscale', 'ExoscaleNodeDriver'),
+    Provider.IKOULA:
+    ('libcloud.compute.drivers.ikoula', 'IkoulaNodeDriver'),
+    Provider.OUTSCALE_SAS:
+    ('libcloud.compute.drivers.ec2', 'OutscaleSASNodeDriver'),
+    Provider.OUTSCALE_INC:
+    ('libcloud.compute.drivers.ec2', 'OutscaleINCNodeDriver'),
+    Provider.VSPHERE:
+    ('libcloud.compute.drivers.vsphere', 'VSphereNodeDriver'),
+    Provider.PROFIT_BRICKS:
+    ('libcloud.compute.drivers.profitbricks', 'ProfitBricksNodeDriver'),
+    Provider.VULTR:
+    ('libcloud.compute.drivers.vultr', 'VultrNodeDriver'),
+    Provider.AURORACOMPUTE:
+    ('libcloud.compute.drivers.auroracompute', 'AuroraComputeNodeDriver'),
+    Provider.CLOUDWATT:
+    ('libcloud.compute.drivers.cloudwatt', 'CloudwattNodeDriver'),
+    Provider.PACKET:
+    ('libcloud.compute.drivers.packet', 'PacketNodeDriver'),
+    Provider.ONAPP:
+    ('libcloud.compute.drivers.onapp', 'OnAppNodeDriver'),
+    Provider.RUNABOVE:
+    ('libcloud.compute.drivers.runabove', 'RunAboveNodeDriver'),
+    Provider.INTERNETSOLUTIONS:
+    ('libcloud.compute.drivers.internetsolutions',
+     'InternetSolutionsNodeDriver'),
+    Provider.INDOSAT:
+    ('libcloud.compute.drivers.indosat', 'IndosatNodeDriver'),
+    Provider.MEDONE:
+    ('libcloud.compute.drivers.medone', 'MedOneNodeDriver'),
+    Provider.BSNL:
+    ('libcloud.compute.drivers.bsnl', 'BSNLNodeDriver'),
+    Provider.CISCOCCS:
+    ('libcloud.compute.drivers.ciscoccs', 'CiscoCCSNodeDriver'),
+    Provider.NTTA:
+    ('libcloud.compute.drivers.ntta', 'NTTAmericaNodeDriver'),
+    Provider.ALIYUN_ECS:
+    ('libcloud.compute.drivers.ecs', 'ECSDriver'),
 }
 
+
 def get_driver(provider):
-    return _get_provider_driver(DRIVERS, provider)
+    deprecated_constants = OLD_CONSTANT_TO_NEW_MAPPING
+    return _get_provider_driver(drivers=DRIVERS, provider=provider,
+                                deprecated_providers=DEPRECATED_DRIVERS,
+                                deprecated_constants=deprecated_constants)
+
+
+def set_driver(provider, module, klass):
+    return _set_provider_driver(drivers=DRIVERS, provider=provider,
+                                module=module, klass=klass)

@@ -36,7 +36,7 @@ sys.path.append(os.path.normpath(os.path.join(os.path.dirname(__file__),
 
 from libcloud.common.types import InvalidCredsError
 from libcloud.compute.types import Provider
-from libcloud.providers import get_driver
+from libcloud.compute.providers import get_driver
 
 from pprint import pprint
 
@@ -60,10 +60,10 @@ def get_demo_driver(provider_name='RACKSPACE', *args, **kwargs):
 
     # And maybe do more than that:
     >>> node = driver.create_node(
-            name='my_first_node',
-            image=images[0],
-            size=sizes[0],
-        )
+        ... name='my_first_node',
+        ... image=images[0],
+        ... size=sizes[0],
+        ... )
     >>> node.destroy()
     """
     provider_name = provider_name.upper()
